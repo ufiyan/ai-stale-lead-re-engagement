@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, root_validator
 from typing import List, Dict, Optional
 import os
 from datetime import datetime
@@ -62,13 +62,21 @@ class EmailUpdateRequest(BaseModel):
 class FormSubmission(BaseModel):
     # Core required fields
     fullName: str
-    emailAddress: str
-    
+    emailAddress: str = None  # Make optional for validation
+    email: Optional[str] = None  # Accept 'email' as well
+
     # Optional fields based on your form and Airtable table
     phoneNumber: Optional[str] = None
     potentialInterest: Optional[str] = None
     crmServicesNeeded: Optional[str] = None
     leadSource: Optional[str] = None
+
+    @root_validator(pre=True)
+    def map_email_field(cls, values):
+        # If 'email' is present but 'emailAddress' is not, map it
+        if not values.get('emailAddress') and values.get('email'):
+            values['emailAddress'] = values['email']
+        return values
 
 # ROOT ENDPOINTS
 @app.get("/")
@@ -181,7 +189,7 @@ async def generate_email_for_lead(lead_id: str):
         if not email_generator.validate_lead_data(lead):
             raise HTTPException(status_code=400, detail="Insufficient lead data for email generation")
         
-        generated_email = email_generator.generate_re_engagement_email(lead)
+        generated_email = await email_generator.generate_re_engagement_email(lead)  # <-- FIXED
         success = await airtable_utils.update_lead_with_generated_email(lead_id, generated_email)
         
         if success:
@@ -234,7 +242,7 @@ async def generate_and_update_email(lead_id: str):
         if not email_generator.validate_lead_data(lead):
             raise HTTPException(status_code=400, detail="Insufficient lead data for email generation")
         
-        generated_email = email_generator.generate_re_engagement_email(lead)
+        generated_email = await email_generator.generate_re_engagement_email(lead)  # <-- FIXED
         update_success = await airtable_utils.update_lead_with_generated_email(lead_id, generated_email)
         
         if update_success:
@@ -350,7 +358,7 @@ async def generate_batch_emails():
         for lead in leads_to_process:
             try:
                 if email_generator.validate_lead_data(lead):
-                    generated_email = email_generator.generate_re_engagement_email(lead)
+                    generated_email = await email_generator.generate_re_engagement_email(lead)  # <-- FIXED
                     email_success = await airtable_utils.update_lead_with_generated_email(lead['id'], generated_email)
                     
                     if email_success:

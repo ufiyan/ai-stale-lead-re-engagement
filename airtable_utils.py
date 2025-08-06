@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 from dotenv import load_dotenv
 import logging
+from email_generator import GeminiEmailGenerator
 
 # Load environment variables from .env file
 load_dotenv()
@@ -32,12 +33,17 @@ class AirtableUtils:
                     "Authorization": f"Bearer {self.api_key}",
                     "Content-Type": "application/json"
                 }
-                
-                response = await client.get(url, headers=headers)
-                response.raise_for_status()
-                
-                data = response.json()
-                all_records = data.get("records", [])
+                all_records = []
+                params = {}
+                while True:
+                    response = await client.get(url, headers=headers, params=params)
+                    response.raise_for_status()
+                    data = response.json()
+                    all_records.extend(data.get("records", []))
+                    offset = data.get("offset")
+                    if not offset:
+                        break
+                    params["offset"] = offset
                 
                 stale_leads = []
                 today = datetime.now().date()
@@ -50,33 +56,36 @@ class AirtableUtils:
                     # Normalize field names for internal use (camelCase keys)
                     lead = {
                         "id": record["id"],
-                        "fullName": fields.get("Full Name", ""),
-                        "emailAddress": fields.get("Email Address", ""),
-                        "phoneNumber": fields.get("Phone Number", ""),
-                        "potentialInterest": fields.get("Potential Interest", ""),
-                        "crmServicesNeeded": fields.get("CRM Services Needed", ""),
-                        "leadSource": fields.get("Lead Source", ""),
-                        "statusInSalesFunnel": fields.get("Status in Sales Funnel", ""),
-                        "lastContacted": fields.get("Last Contacted", ""),
-                        "generatedTextMessage": fields.get("Generated Text Message", ""),
+                        "full_name": fields.get("Full Name", ""),
+                        "email": fields.get("Email Address", ""),
+                        "phone_number": fields.get("Phone Number", ""),
+                        "potential_interest": fields.get("Potential Interest", ""),
+                        "crm_services_needed": fields.get("CRM Services Needed", ""),
+                        "lead_source": fields.get("Lead Source", ""),
+                        "status_in_sales_funnel": fields.get("Status in Sales Funnel", ""),
+                        "last_contacted": fields.get("Last Contacted", ""),
+                        "generated_email_message": fields.get("Generated Text Message", ""),
                         "timestamp": fields.get("Timestamp", ""),
                         "status": fields.get("Status", "")
                     }
-                    
-                    if not last_contacted_str or not lead.get("generatedTextMessage"):
-                        # If 'Last Contacted' is missing or no email is generated, consider it stale
-                        stale_leads.append(lead)
-                        continue
-                    
-                    try:
-                        last_contacted_date = datetime.strptime(last_contacted_str, "%Y-%m-%d").date()
-                        
-                        if today - last_contacted_date > stale_threshold:
+
+                    # Only include leads that have not been contacted in >7 days AND have no generated email
+                    if not lead.get("generated_email_message"):
+                        if not last_contacted_str:
                             stale_leads.append(lead)
-                            
-                    except ValueError:
-                        logging.warning(f"Could not parse date '{last_contacted_str}' for record ID {record['id']}. Assuming stale.")
-                        stale_leads.append(lead)
+                            continue
+                        try:
+                            if "/" in last_contacted_str:
+                                # Airtable is giving you DD/MM/YYYY
+                                last_contacted_date = datetime.strptime(last_contacted_str, "%d/%m/%Y").date()
+                            else:
+                                # Fallback to ISO YYYY-MM-DD
+                                last_contacted_date = datetime.strptime(last_contacted_str, "%Y-%m-%d").date()
+                            if today - last_contacted_date > stale_threshold:
+                                stale_leads.append(lead)
+                        except ValueError:
+                            logging.warning(f"Could not parse date '{last_contacted_str}' for record ID {record['id']}. Assuming stale.")
+                            stale_leads.append(lead)
                 
                 logging.info(f"Found {len(stale_leads)} stale leads")
                 return stale_leads
@@ -104,15 +113,15 @@ class AirtableUtils:
                 # Normalize field names for internal use
                 lead = {
                     "id": record["id"],
-                    "fullName": fields.get("Full Name", ""),
-                    "emailAddress": fields.get("Email Address", ""),
-                    "phoneNumber": fields.get("Phone Number", ""),
-                    "potentialInterest": fields.get("Potential Interest", ""),
-                    "crmServicesNeeded": fields.get("CRM Services Needed", ""),
-                    "leadSource": fields.get("Lead Source", ""),
-                    "statusInSalesFunnel": fields.get("Status in Sales Funnel", ""),
-                    "lastContacted": fields.get("Last Contacted", ""),
-                    "generatedTextMessage": fields.get("Generated Text Message", ""),
+                    "full_name": fields.get("Full Name", ""),
+                    "email": fields.get("Email Address", ""),
+                    "phone_number": fields.get("Phone Number", ""),
+                    "potential_interest": fields.get("Potential Interest", ""),
+                    "crm_services_needed": fields.get("CRM Services Needed", ""),
+                    "lead_source": fields.get("Lead Source", ""),
+                    "status_in_sales_funnel": fields.get("Status in Sales Funnel", ""),
+                    "last_contacted": fields.get("Last Contacted", ""),
+                    "generated_email_message": fields.get("Generated Text Message", ""),
                     "timestamp": fields.get("Timestamp", ""),
                     "status": fields.get("Status", "")
                 }
@@ -324,4 +333,3 @@ async def main():
 
 # To run this code, you would use an event loop.
 # Example: asyncio.run(main())
-

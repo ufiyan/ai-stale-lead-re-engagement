@@ -18,8 +18,9 @@ class GeminiEmailGenerator:
         Initializes the email generator with the Gemini API key.
         The API key is handled by the canvas environment.
         """
+        if not api_key:
+            api_key = os.getenv("GEMINI_API_KEY", "")
         self.api_key = api_key
-        # Note: The API key will be added to the request headers, not the URL.
         self.api_url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent"
         
     def _create_personalized_prompt(self, lead: Dict) -> str:
@@ -112,16 +113,17 @@ IMPORTANT: Make it personal and relevant to their specific situation. Avoid gene
         Makes a fetch call to the Gemini API with exponential backoff using httpx.
         The previous code used `js.fetch`, which is not valid Python.
         """
+        api_url = f"{self.api_url}?key={self.api_key}"
         for i in range(retries):
             try:
                 async with httpx.AsyncClient() as client:
                     response = await client.post(
-                        self.api_url,
-                        headers={'Content-Type': 'application/json', 'x-api-key': self.api_key},
+                        api_url,
+                        headers={'Content-Type': 'application/json'},
                         json=payload,
-                        timeout=30 # Add a timeout for robustness
+                        timeout=30
                     )
-                    response.raise_for_status() # Raises an HTTPError for bad responses
+                    response.raise_for_status()
                     return response.json()
             except httpx.HTTPStatusError as e:
                 # Handle rate limiting specifically
